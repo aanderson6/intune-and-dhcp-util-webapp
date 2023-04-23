@@ -1,0 +1,5 @@
+Host 10.0.0.1
+        User dhcp_user
+        IdentityFile /var/www/util/dhcp-ssh/key
+        StrictHostKeyChecking no
+        UserKnownHostsFile=/dev/null

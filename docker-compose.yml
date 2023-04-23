@@ -1,0 +1,6 @@
+services:
+  util:
+    build: docker
+    restart: always
+    ports:
+        - '10090:10001'

@@ -1,0 +1,149 @@
+kind: pipeline
+type: docker
+name: build and deploy util
+
+trigger:
+  event:
+    - push
+
+clone:
+  disable: true
+
+steps:
+
+  - name: staging clone
+    image: alpine
+    environment:
+      CKEY:
+        from_secret: clone-key
+    commands:
+    - apk update
+    - apk add git
+    - apk add openssh-client
+    - mkdir $HOME/.ssh
+    - echo "$CKEY" > $HOME/.ssh/id_clone
+    - chmod 600 $HOME/.ssh/id_clone
+    - GIT_SSH_COMMAND='ssh -i $HOME/.ssh/id_clone -o StrictHostKeyChecking=no' git clone -b dev repo/goes/here .
+    when:
+      branch: dev
+      event:
+        - push
+
+  - name: prod clone
+    image: alpine
+    environment:
+      CKEY:
+        from_secret: clone-key
+    commands:
+    - apk update
+    - apk add git
+    - apk add openssh-client
+    - mkdir $HOME/.ssh
+    - echo "$CKEY" > $HOME/.ssh/id_clone
+    - chmod 600 $HOME/.ssh/id_clone
+    - GIT_SSH_COMMAND='ssh -i $HOME/.ssh/id_clone -o StrictHostKeyChecking=no' git clone repo/goes/here .
+    when:
+      branch: main
+      event:
+        - push
+
+  - name: staging build
+    image: node
+    environment:
+      KEY:
+        from_secret: my-key
+    commands:
+      - cd util-frontend
+      - npm install
+      - npm run build
+      - cd ..
+      - mkdir docker/build-deploy
+      - cp -r util-backend/* docker/build-deploy
+      - echo "$KEY" > docker/build-deploy/dhcp-ssh/key
+      - cp -r util-frontend/build/static docker/build-deploy
+      - mkdir docker/build-deploy/templates
+      - apt update
+      - apt install rsync -y
+      - rsync -a util-frontend/build/* docker/build-deploy/templates --exclude static
+      - sed -i 's/10090/10091/g' docker-compose.yml
+    when:
+      branch: dev
+      event:
+        - push
+
+  - name: prod build
+    image: node
+    environment:
+      KEY:
+        from_secret: my-key
+    commands:
+      - cd util-frontend
+      - npm install
+      - npm run build
+      - cd ..
+      - mkdir docker/build-deploy
+      - cp -r util-backend/* docker/build-deploy
+      - echo "$KEY" > docker/build-deploy/dhcp-ssh/key
+      - cp -r util-frontend/build/static docker/build-deploy
+      - mkdir docker/build-deploy/templates
+      - apt update
+      - apt install rsync -y
+      - rsync -a util-frontend/build/* docker/build-deploy/templates --exclude static
+    when:
+      branch: main
+      event:
+        - push
+
+  - name: staging test
+    image: alpine
+    commands:
+      - echo 'test would run here'
+    when:
+      branch: dev
+      event:
+        - push
+
+  - name: prod test
+    image: alpine
+    commands:
+      - echo 'test would run here'
+    when:
+      branch: main
+      event:
+        - push
+
+  - name: staging deploy
+    image: alpine
+    environment:
+      KEY:
+        from_secret: my-key
+    commands:
+      - mkdir $HOME/.ssh
+      - echo "$KEY" > $HOME/.ssh/id_drone
+      - chmod 600 $HOME/.ssh/id_drone
+      - apk update
+      - apk add openssh-client
+      - apk add rsync
+      - sh docker/drone-deploy.sh staging
+    when:
+      branch: dev
+      event:
+        - push
+
+  - name: prod deploy
+    image: alpine
+    environment:
+      KEY:
+        from_secret: my-key
+    commands:
+      - mkdir $HOME/.ssh
+      - echo "$KEY" > $HOME/.ssh/id_drone
+      - chmod 600 $HOME/.ssh/id_drone
+      - apk update
+      - apk add openssh-client
+      - apk add rsync
+      - sh docker/drone-deploy.sh prod
+    when:
+      branch: main
+      event:
+        - push
